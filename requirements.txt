@@ -1,8 +1,7 @@
 flask
 joblib
 pandas
-scikit-learn
-xgboost
-python-Levenshtein
-scipy
 tldextract
+scikit-learn
+scipy
+xgboost

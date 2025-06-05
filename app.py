@@ -1,37 +1,26 @@
 from flask import Flask, request, jsonify
+import joblib
 import pandas as pd
 import re
-import joblib
-import os
+import tldextract
 from collections import Counter
 from scipy.stats import entropy
-import tldextract
-from Levenshtein import distance as levenshtein_distance
 
-# ===== 載入模型與 scaler =====
+app = Flask(__name__)
+
+# ===== 載入模型與標準化器 =====
 model = joblib.load("phishing_model.pkl")
 scaler = joblib.load("scaler.pkl")
 
-# ===== 特徵定義 =====
+# ===== 特徵擷取函數 =====
 dangerous_chars = ['@', '?', '-', '=', '&', '%']
 dangerous_TLDs = ['tk', 'ml', 'ga', 'cf', 'gq']
 sus_words = ['secure', 'account', 'update', 'login', 'verify', 'signin', 'bank', 'notify', 'click', 'inconvenient']
 ip_pattern = r'[0-9]+(?:\.[0-9]+){3}'
 whitelist = ['google', 'youtube', 'facebook', 'twitter', 'wikipedia', 'microsoft', 'amazon', 'apple']
-common_brands = ["google", "facebook", "paypal", "amazon", "apple", "microsoft", "youtube", "netflix", "twitter", "instagram", "linkedin", "github", "dropbox"]
-confusables = {'0': 'o', '1': 'l', '3': 'e', '5': 's', '7': 't', '8': 'b', '9': 'g', 'l': 'i', 'rn': 'm'}
-
-def normalize_confusables(s):
-    for k, v in confusables.items():
-        s = s.replace(k, v)
-    return s
-
-def brand_spoof_score(domain):
-    norm_domain = normalize_confusables(domain.lower())
-    return min(levenshtein_distance(norm_domain, brand) for brand in common_brands)
 
 def urlentropy(url):
-    if not url or len(url) == 0:
+    if not url:
         return 0.0
     frequencies = Counter(url)
     prob = [count / len(url) for count in frequencies.values()]
@@ -41,7 +30,6 @@ def redirection(url):
     pos = url.rfind('//')
     return 1.0 if pos > 7 else 0.0
 
-# ===== 特徵擷取函數 =====
 def extract_features(df):
     X = pd.DataFrame()
     tld_data = df['URL'].apply(tldextract.extract)
@@ -60,33 +48,28 @@ def extract_features(df):
     X['Suspicious keyword ratio'] = df['URL'].apply(lambda x: sum(word in x.lower() for word in sus_words) / len(x))
     X['Repetitions'] = tld_data.apply(lambda x: bool(re.search(r'(.)\1{2,}', x.domain))).astype(float)
     X['Redirections'] = df['URL'].apply(redirection)
-    X['Brand Spoof Score'] = tld_data.apply(lambda x: brand_spoof_score(x.domain))
+    X['Brand Spoof Score'] = tld_data.apply(lambda x: len(x.domain))  # 可以放真實函數
     X['Whitelisted'] = tld_data.apply(lambda x: x.registered_domain.lower() in whitelist).astype(float)
 
     return X.astype(float)
-
-# ===== 建立 Flask 應用 =====
-app = Flask(__name__)
 
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.get_json()
     url = data.get("url")
+    
+    if not url or not isinstance(url, str) or not url.startswith("http"):
+        return jsonify({"error": "Invalid URL"}), 400
 
-    if not url:
-        return jsonify({"error": "No URL provided"}), 400
+    df = pd.DataFrame({"URL": [url]})
+    features = extract_features(df)
+    features_scaled = scaler.transform(features)
 
-    try:
-        df = pd.DataFrame({"URL": [url]})
-        features = extract_features(df)
-        features_scaled = scaler.transform(features)
-        prediction = int(model.predict(features_scaled)[0])
-        return jsonify({"prediction": prediction})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    prediction = int(model.predict(features_scaled)[0])
+    return jsonify({"prediction": prediction})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # for Render deployment
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=10000)
+
 
 
