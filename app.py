@@ -12,18 +12,32 @@ scaler = joblib.load('scaler.pkl')
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-    url = data.get('url')  # 是網址字串
+    url = data.get('url')
 
     if url is None:
         return jsonify({'error': 'No URL provided'}), 400
 
     try:
-        features = extract_features_from_url(url)  # ← 回傳 2 維 list
-        features_scaled = scaler.transform(features)
+        features = extract_features_from_url(url)  # 應該是 2D list，例如 [[1, 0, 0, ...]]
+        
+        # 新增部分：轉成 DataFrame 並加上欄位名稱
+        import pandas as pd
+        feature_names = [
+            "URL length", "Number of dots", "Number of slashes", "Dangerous char ratio", "Numerical char ratio", 
+            "Dangerous TLD", "Entropy", "IP Address", "Domain name length", "Full domain length", 
+            "Subdomain count", "Suspicious keyword ratio", "Repetitions", "Redirections", "Brand Spoof Score", 
+            "Whitelisted"
+        ]
+        features_df = pd.DataFrame(features, columns=feature_names)
+
+        # 使用 scaler 與 model
+        features_scaled = scaler.transform(features_df)
         prediction = model.predict(features_scaled)
         return jsonify({'prediction': int(prediction[0])})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 
 if __name__ == '__main__':
     import os
