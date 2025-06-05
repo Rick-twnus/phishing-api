@@ -99,6 +99,9 @@ def predict():
 def home():
     return "🚀 Phishing Detection API is running!", 200
 
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 5000))  # Render 會自動設好 PORT 環境變數
+    app.run(host='0.0.0.0', port=port)
+
 
